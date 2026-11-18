@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <regex>
 #include <sstream>
@@ -370,6 +371,8 @@ ArgOptions SDSvrParams::get_options() {
     options.string_options = {
         {"-l", "--listen-ip", "server listen ip (default: 127.0.0.1)", 0, &listen_ip},
         {"", "--serve-html-path", "path to HTML file to serve at root (optional)", 0, &serve_html_path},
+        {"", "--api-key", "require this key as a bearer token on every request (default: none, or SD_API_KEY)", 0, &api_key},
+        {"", "--api-key-file", "require the key in this file as a bearer token on every request", 0, &api_key_file},
     };
 
     options.int_options = {
@@ -407,6 +410,30 @@ ArgOptions SDSvrParams::get_options() {
 }
 
 bool SDSvrParams::validate() {
+    if (!api_key.empty() && !api_key_file.empty()) {
+        LOG_ERROR("error: use --api-key or --api-key-file, not both");
+        return false;
+    }
+    if (!api_key_file.empty()) {
+        std::ifstream file(api_key_file);
+        std::stringstream contents;
+        contents << file.rdbuf();
+        const std::string text = contents.str();
+        const auto first       = text.find_first_not_of(" \t\r\n");
+        const auto last        = text.find_last_not_of(" \t\r\n");
+        api_key                = first == std::string::npos ? "" : text.substr(first, last - first + 1);
+        if (!file || api_key.empty()) {
+            LOG_ERROR("error: no API key could be read from %s", api_key_file.c_str());
+            return false;
+        }
+    }
+    // The environment keeps the key out of the process list.
+    if (api_key.empty()) {
+        if (const char* key = std::getenv("SD_API_KEY"); key != nullptr) {
+            api_key = key;
+        }
+    }
+
     if (listen_ip.empty()) {
         LOG_ERROR("error: the following arguments are required: listen_ip");
         return false;
@@ -450,6 +477,7 @@ std::string SDSvrParams::to_string() const {
         << "  max_pending_jobs: " << max_pending_jobs << ",\n"
         << "  completed_ttl_seconds: " << completed_ttl_seconds << ",\n"
         << "  serve_html_path: \"" << serve_html_path << "\",\n"
+        << "  api_key: " << (api_key.empty() ? "none" : "set") << ",\n"
         << "}";
     return oss.str();
 }

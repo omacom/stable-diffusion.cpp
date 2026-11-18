@@ -67,6 +67,21 @@ void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
     log_print(level, log, svr_params->log_level, svr_params->color);
 }
 
+// Whether the request carries `Authorization: Bearer <key>`, compared in time
+// that doesn't depend on where the first difference is.
+static bool authorized(const httplib::Request& req, const std::string& key) {
+    const std::string header = req.get_header_value("Authorization");
+    const std::string prefix = "Bearer ";
+    if (header.size() != prefix.size() + key.size() || header.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+    unsigned char difference = 0;
+    for (size_t i = 0; i < key.size(); ++i) {
+        difference |= static_cast<unsigned char>(header[prefix.size() + i] ^ key[i]);
+    }
+    return difference == 0;
+}
+
 int main(int argc, const char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--version") {
         std::cout << version_string() << "\n";
@@ -136,7 +151,7 @@ int main(int argc, const char** argv) {
 
     httplib::Server svr;
 
-    svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+    svr.set_pre_routing_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
         std::string origin = req.get_header_value("Origin");
         if (origin.empty()) {
             origin = "*";
@@ -148,6 +163,12 @@ int main(int argc, const char** argv) {
 
         if (req.method == "OPTIONS") {
             res.status = 204;
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        if (!svr_params.api_key.empty() && !authorized(req, svr_params.api_key)) {
+            res.status = 401;
+            res.set_content(R"({"error":{"message":"Invalid API key","type":"authentication_error","code":"invalid_api_key"}})",
+                            "application/json");
             return httplib::Server::HandlerResponse::Handled;
         }
         return httplib::Server::HandlerResponse::Unhandled;

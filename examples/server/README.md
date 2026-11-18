@@ -419,6 +419,10 @@ configured defaults.
 | `--listen-port <port>` | `1234` | Server listen port |
 | `--max-pending-jobs <count>` | `64` | Maximum async jobs queued or generating |
 | `--completed-ttl-seconds <seconds>` | `600` | Retention time for completed async jobs |
+| `--api-key <key>` | none | Require `Authorization: Bearer <key>` on every request; `SD_API_KEY` sets it too |
+| `--api-key-file <path>` | none | Read the required key from a file, keeping it out of the process list |
+
+Without a key the server answers anyone who can reach it, so set one before listening beyond `127.0.0.1`. With one, a request without the right key gets `401` with an OpenAI-style error; CORS preflight requests stay open.
 
 ### Logging
 

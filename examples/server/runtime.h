@@ -25,6 +25,9 @@ struct SDSvrParams {
     int max_pending_jobs      = 64;
     int completed_ttl_seconds = 600;
     std::string serve_html_path;
+    // A bearer token every request must carry; empty serves without one.
+    std::string api_key;
+    std::string api_key_file;
     std::vector<std::string> model_dirs;
     bool normal_exit         = false;
     sd_log_level_t log_level = SD_LOG_INFO;
