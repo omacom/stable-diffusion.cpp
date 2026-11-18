@@ -1,9 +1,14 @@
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+#include <pthread.h>
+#endif
 
 #include "httplib.h"
 
@@ -132,6 +137,18 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
+#ifndef _WIN32
+    // SIGINT and SIGTERM stop the server. They are blocked in every thread and
+    // taken by one that waits for them, so nothing runs in a signal handler.
+    // As a container's first process the server would otherwise ignore both,
+    // since the kernel gives process 1 no default handling.
+    sigset_t stop_signals;
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &stop_signals, nullptr);
+#endif
+
     std::thread async_worker(async_job_worker, std::ref(runtime));
 
     httplib::Server svr;
@@ -166,6 +183,15 @@ int main(int argc, const char** argv) {
     register_model_endpoints(svr, runtime);
 
     LOG_INFO("listening on: http://%s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
+#ifndef _WIN32
+    std::thread stopper([&svr, stop_signals] {
+        int signal = 0;
+        sigwait(&stop_signals, &signal);
+        LOG_INFO("stopping on signal %d", signal);
+        svr.stop();
+    });
+    stopper.detach();
+#endif
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
     {
